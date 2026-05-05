@@ -1,26 +1,27 @@
 # ShareAbite
 Connecting donors and receivers to reduce food wastage. Join restaurants, individuals, NGOs, and volunteers in making a difference.
 
-## 🚀 How to Run the Project (Step-by-Step)
+## 🚀 How to Run the Project in VS Code (Step-by-Step)
 
-There are two ways to run the ShareAbite project: using the provided script or running the frontend and backend manually.
+First, open the `ShareAbite` project folder in **Visual Studio Code**. Then, you can run the project using either the automated script or manually using VS Code's integrated terminals.
 
 ### Option 1: Using the Automated Script (Recommended)
-1. Open your terminal and navigate to the root directory of the project (`ShareAbite`).
-2. Run the provided shell script:
+1. Open a new Integrated Terminal in VS Code (`Ctrl + \`` or `Cmd + j` or via the top menu **Terminal > New Terminal**).
+2. Ensure you are in the root directory of the project (`ShareAbite`).
+3. Run the provided shell script:
    ```bash
    ./run.sh
    ```
-3. The script will start both the backend and frontend servers in the background.
-4. Access the application:
+4. The script will start both the backend and frontend servers in the background.
+5. Access the application:
    - **Frontend:** http://localhost:5173
    - **Backend:** http://localhost:5001
-5. To stop both servers, simply press `Ctrl+C` in the terminal.
+6. To stop both servers, simply press `Ctrl+C` in the terminal.
 
-### Option 2: Running Manually
+### Option 2: Running Manually (Split Terminals)
 
 **Step 1: Start the Backend**
-1. Open a terminal.
+1. Open a new terminal in VS Code (**Terminal > New Terminal**).
 2. Navigate to the backend directory:
    ```bash
    cd "mca project/backend"
@@ -35,8 +36,8 @@ There are two ways to run the ShareAbite project: using the provided script or r
    ```
 
 **Step 2: Start the Frontend**
-1. Open a new terminal window.
-2. Navigate to the frontend directory:
+1. In VS Code, split the terminal by clicking the **Split Terminal** icon (or pressing `Ctrl + Shift + 5` / `Cmd + \`).
+2. In the new split terminal, navigate to the frontend directory:
    ```bash
    cd "mca project/frontend"
    ```
