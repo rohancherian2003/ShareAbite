@@ -6,7 +6,7 @@ Connecting donors and receivers to reduce food wastage. Join restaurants, indivi
 First, open the `ShareAbite` project folder in **Visual Studio Code**. Then, you can run the project using either the automated script or manually using VS Code's integrated terminals.
 
 ### Option 1: Using the Automated Script (Recommended)
-1. Open a new Integrated Terminal in VS Code (`Ctrl + \`` or `Cmd + j` or via the top menu **Terminal > New Terminal**).
+1. Open a new Integrated Terminal in VS Code (`` `Ctrl + ` ` `` or `Cmd + j` or via the top menu **Terminal > New Terminal**).
 2. Ensure you are in the root directory of the project (`ShareAbite`).
 3. Run the provided shell script:
    ```bash
