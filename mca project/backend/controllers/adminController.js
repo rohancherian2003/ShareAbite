@@ -103,8 +103,8 @@ exports.deleteUser = async (req, res) => {
     if (users.length > 0) {
       await sendEmail(
         users[0].email,
-        "Account Removed - ShareAbite",
-        `Hello ${users[0].name},\n\nYour account has been removed or your registration was rejected by the admin.\n\nThank you,\nShareAbite Team`,
+        "Account Rejected - ShareAbite",
+        `Hello ${users[0].name},\n\nWe regret to inform you that your account registration on ShareAbite has been reviewed and rejected by the admin.\n\nIf you believe this is a mistake, please contact our support team.\n\nThank you,\nShareAbite Team`,
       );
     }
 
