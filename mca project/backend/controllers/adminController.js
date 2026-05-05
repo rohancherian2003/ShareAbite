@@ -4,13 +4,12 @@ const { sendEmail } = require("../utils/emailer");
 // Get all users
 exports.getAllUsers = async (req, res) => {
   try {
-    const [users] = await db.query(`
-      SELECT id, name, email, role, approved, created_at 
-      FROM users 
-      WHERE role != 'admin'
-      ORDER BY created_at DESC
-    `);
-
+    const snapshot = await db.collection("users").where("role", "!=", "admin").get();
+    const users = snapshot.docs.map((doc) => {
+      const d = doc.data();
+      return { id: doc.id, name: d.name, email: d.email, role: d.role, approved: d.approved, created_at: d.created_at };
+    });
+    users.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
     res.json(users);
   } catch (error) {
     console.error("Get users error:", error);
@@ -22,15 +21,15 @@ exports.getAllUsers = async (req, res) => {
 exports.approveUser = async (req, res) => {
   try {
     const { id } = req.params;
+    await db.collection("users").doc(id).update({ approved: true });
 
-    await db.query("UPDATE users SET approved = TRUE WHERE id = ?", [id]);
-
-    const [users] = await db.query("SELECT email, name FROM users WHERE id = ?", [id]);
-    if (users.length > 0) {
+    const doc = await db.collection("users").doc(id).get();
+    if (doc.exists) {
+      const user = doc.data();
       await sendEmail(
-        users[0].email,
+        user.email,
         "Account Approved - ShareAbite",
-        `Hello ${users[0].name},\n\nYour account has been approved by the admin. You can now log in and use the platform.\n\nThank you,\nShareAbite Team`,
+        `Hello ${user.name},\n\nYour account has been approved by the admin. You can now log in and use the platform.\n\nThank you,\nShareAbite Team`
       );
     }
 
@@ -47,11 +46,12 @@ exports.updateUser = async (req, res) => {
     const { id } = req.params;
     const { name, email, role, approved } = req.body;
 
-    await db.query(
-      'UPDATE users SET name = ?, email = ?, role = ?, approved = ? WHERE id = ? AND role != "admin"',
-      [name, email, role, approved, id],
-    );
+    const doc = await db.collection("users").doc(id).get();
+    if (!doc.exists || doc.data().role === "admin") {
+      return res.status(403).json({ message: "Cannot update admin user" });
+    }
 
+    await db.collection("users").doc(id).update({ name, email, role, approved });
     res.json({ message: "User updated successfully" });
   } catch (error) {
     console.error("Update user error:", error);
@@ -62,28 +62,20 @@ exports.updateUser = async (req, res) => {
 // Get system statistics
 exports.getStats = async (req, res) => {
   try {
-    const [donationCount] = await db.query(
-      "SELECT COUNT(*) as count FROM donations",
-    );
-    const [donorCount] = await db.query(
-      'SELECT COUNT(*) as count FROM users WHERE role = "donor" AND approved = TRUE',
-    );
-    const [receiverCount] = await db.query(
-      'SELECT COUNT(*) as count FROM users WHERE role = "receiver" AND approved = TRUE',
-    );
-    const [pendingCount] = await db.query(
-      "SELECT COUNT(*) as count FROM users WHERE approved = FALSE",
-    );
-    const [requestCount] = await db.query(
-      "SELECT COUNT(*) as count FROM requests",
-    );
+    const [donationSnap, donorSnap, receiverSnap, pendingSnap, requestSnap] = await Promise.all([
+      db.collection("donations").get(),
+      db.collection("users").where("role", "==", "donor").where("approved", "==", true).get(),
+      db.collection("users").where("role", "==", "receiver").where("approved", "==", true).get(),
+      db.collection("users").where("approved", "==", false).get(),
+      db.collection("requests").get(),
+    ]);
 
     res.json({
-      totalDonations: donationCount[0].count,
-      activeDonors: donorCount[0].count,
-      activeReceivers: receiverCount[0].count,
-      pendingApprovals: pendingCount[0].count,
-      totalRequests: requestCount[0].count,
+      totalDonations: donationSnap.size,
+      activeDonors: donorSnap.size,
+      activeReceivers: receiverSnap.size,
+      pendingApprovals: pendingSnap.size,
+      totalRequests: requestSnap.size,
     });
   } catch (error) {
     console.error("Get stats error:", error);
@@ -91,22 +83,23 @@ exports.getStats = async (req, res) => {
   }
 };
 
-// Delete user
+// Delete user (Reject)
 exports.deleteUser = async (req, res) => {
   try {
     const { id } = req.params;
 
-    const [users] = await db.query("SELECT email, name FROM users WHERE id = ?", [id]);
+    const doc = await db.collection("users").doc(id).get();
+    if (!doc.exists) return res.status(404).json({ message: "User not found" });
+    const user = doc.data();
+    if (user.role === "admin") return res.status(403).json({ message: "Cannot delete admin" });
 
-    await db.query('DELETE FROM users WHERE id = ? AND role != "admin"', [id]);
+    await db.collection("users").doc(id).delete();
 
-    if (users.length > 0) {
-      await sendEmail(
-        users[0].email,
-        "Account Rejected - ShareAbite",
-        `Hello ${users[0].name},\n\nWe regret to inform you that your account registration on ShareAbite has been reviewed and rejected by the admin.\n\nIf you believe this is a mistake, please contact our support team.\n\nThank you,\nShareAbite Team`,
-      );
-    }
+    await sendEmail(
+      user.email,
+      "Account Rejected - ShareAbite",
+      `Hello ${user.name},\n\nWe regret to inform you that your account registration on ShareAbite has been reviewed and rejected by the admin.\n\nIf you believe this is a mistake, please contact our support team.\n\nThank you,\nShareAbite Team`
+    );
 
     res.json({ message: "User deleted successfully" });
   } catch (error) {
@@ -118,17 +111,27 @@ exports.deleteUser = async (req, res) => {
 // Get all restaurants
 exports.getAllRestaurants = async (req, res) => {
   try {
-    const [restaurants] = await db.query(`
-      SELECT r.*, u.name as owner_name, u.email as owner_email,
-             COUNT(DISTINCT d.id) as total_donations,
-             COUNT(DISTINCT CASE WHEN d.status = 'available' THEN d.id END) as active_donations
-      FROM restaurants r
-      LEFT JOIN users u ON r.user_id = u.id
-      LEFT JOIN donations d ON r.id = d.restaurant_id
-      GROUP BY r.id
-      ORDER BY r.created_at DESC
-    `);
+    const restSnap = await db.collection("restaurants").get();
+    const restaurants = await Promise.all(
+      restSnap.docs.map(async (doc) => {
+        const r = doc.data();
+        const ownerDoc = r.user_id ? await db.collection("users").doc(r.user_id).get() : null;
+        const owner = ownerDoc && ownerDoc.exists ? ownerDoc.data() : {};
 
+        const donSnap = await db.collection("donations").where("restaurant_id", "==", doc.id).get();
+        const total_donations = donSnap.size;
+        const active_donations = donSnap.docs.filter((d) => d.data().status === "available").length;
+
+        return {
+          id: doc.id, ...r,
+          owner_name: owner.name || "",
+          owner_email: owner.email || "",
+          total_donations,
+          active_donations,
+        };
+      })
+    );
+    restaurants.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
     res.json(restaurants);
   } catch (error) {
     console.error("Get restaurants error:", error);
@@ -141,12 +144,7 @@ exports.updateRestaurant = async (req, res) => {
   try {
     const { id } = req.params;
     const { name, type, address, phone, email } = req.body;
-
-    await db.query(
-      "UPDATE restaurants SET name = ?, type = ?, address = ?, phone = ?, email = ? WHERE id = ?",
-      [name, type, address, phone, email, id],
-    );
-
+    await db.collection("restaurants").doc(id).update({ name, type, address, phone, email });
     res.json({ message: "Restaurant updated successfully" });
   } catch (error) {
     console.error("Update restaurant error:", error);
@@ -158,9 +156,7 @@ exports.updateRestaurant = async (req, res) => {
 exports.deleteRestaurant = async (req, res) => {
   try {
     const { id } = req.params;
-
-    await db.query("DELETE FROM restaurants WHERE id = ?", [id]);
-
+    await db.collection("restaurants").doc(id).delete();
     res.json({ message: "Restaurant deleted successfully" });
   } catch (error) {
     console.error("Delete restaurant error:", error);
@@ -172,21 +168,18 @@ exports.deleteRestaurant = async (req, res) => {
 exports.getRestaurantStats = async (req, res) => {
   try {
     const { id } = req.params;
+    const donSnap = await db.collection("donations").where("restaurant_id", "==", id).get();
 
-    const [donations] = await db.query(
-      `
-      SELECT d.*, 
-             COUNT(r.id) as request_count,
-             COUNT(CASE WHEN r.status = 'approved' THEN 1 END) as approved_count
-      FROM donations d
-      LEFT JOIN requests r ON d.id = r.donation_id
-      WHERE d.restaurant_id = ?
-      GROUP BY d.id
-      ORDER BY d.created_at DESC
-    `,
-      [id],
+    const donations = await Promise.all(
+      donSnap.docs.map(async (doc) => {
+        const d = doc.data();
+        const reqSnap = await db.collection("requests").where("donation_id", "==", doc.id).get();
+        const request_count = reqSnap.size;
+        const approved_count = reqSnap.docs.filter((r) => r.data().status === "approved").length;
+        return { id: doc.id, ...d, request_count, approved_count };
+      })
     );
-
+    donations.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
     res.json(donations);
   } catch (error) {
     console.error("Get restaurant stats error:", error);

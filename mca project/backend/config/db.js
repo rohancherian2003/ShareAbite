@@ -1,18 +1,12 @@
-const mysql = require("mysql2");
-const dotenv = require("dotenv");
+const admin = require("firebase-admin");
+const serviceAccount = require("./serviceAccountKey.json");
 
-dotenv.config();
+if (!admin.apps.length) {
+  admin.initializeApp({
+    credential: admin.credential.cert(serviceAccount),
+  });
+}
 
-const pool = mysql.createPool({
-  host: process.env.DB_HOST || "localhost",
-  port: process.env.DB_PORT || 3306,
-  user: process.env.DB_USER || "root",
-  password: process.env.DB_PASSWORD || "",
-  database: process.env.DB_NAME || "food_waste_db",
-  waitForConnections: true,
-  connectionLimit: 10,
-  queueLimit: 0,
-});
+const db = admin.firestore();
 
-
-module.exports = pool.promise();
+module.exports = db;

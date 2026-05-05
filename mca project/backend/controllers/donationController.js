@@ -6,24 +6,17 @@ exports.registerRestaurant = async (req, res) => {
     const { name, type, address, phone, email } = req.body;
     const userId = req.user.userId;
 
-    // Check if restaurant already registered
-    const [existing] = await db.query(
-      "SELECT * FROM restaurants WHERE user_id = ?",
-      [userId],
-    );
-    if (existing.length > 0) {
+    const existing = await db.collection("restaurants").where("user_id", "==", userId).get();
+    if (!existing.empty) {
       return res.status(400).json({ message: "Restaurant already registered" });
     }
 
-    const [result] = await db.query(
-      "INSERT INTO restaurants (user_id, name, type, address, phone, email) VALUES (?, ?, ?, ?, ?, ?)",
-      [userId, name, type, address, phone, email],
-    );
-
-    res.status(201).json({
-      message: "Restaurant registered successfully",
-      restaurantId: result.insertId,
+    const result = await db.collection("restaurants").add({
+      user_id: userId, name, type, address, phone, email,
+      created_at: new Date().toISOString(),
     });
+
+    res.status(201).json({ message: "Restaurant registered successfully", restaurantId: result.id });
   } catch (error) {
     console.error("Register restaurant error:", error);
     res.status(500).json({ message: "Server error" });
@@ -36,11 +29,10 @@ exports.updateRestaurant = async (req, res) => {
     const { name, type, address, phone, email } = req.body;
     const userId = req.user.userId;
 
-    await db.query(
-      "UPDATE restaurants SET name = ?, type = ?, address = ?, phone = ?, email = ? WHERE user_id = ?",
-      [name, type, address, phone, email, userId],
-    );
+    const snap = await db.collection("restaurants").where("user_id", "==", userId).get();
+    if (snap.empty) return res.status(404).json({ message: "Restaurant not found" });
 
+    await db.collection("restaurants").doc(snap.docs[0].id).update({ name, type, address, phone, email });
     res.json({ message: "Restaurant updated successfully" });
   } catch (error) {
     console.error("Update restaurant error:", error);
@@ -52,16 +44,11 @@ exports.updateRestaurant = async (req, res) => {
 exports.getRestaurant = async (req, res) => {
   try {
     const userId = req.user.userId;
-    const [restaurants] = await db.query(
-      "SELECT * FROM restaurants WHERE user_id = ?",
-      [userId],
-    );
+    const snap = await db.collection("restaurants").where("user_id", "==", userId).get();
+    if (snap.empty) return res.status(404).json({ message: "Restaurant not found" });
 
-    if (restaurants.length === 0) {
-      return res.status(404).json({ message: "Restaurant not found" });
-    }
-
-    res.json(restaurants[0]);
+    const doc = snap.docs[0];
+    res.json({ id: doc.id, ...doc.data() });
   } catch (error) {
     console.error("Get restaurant error:", error);
     res.status(500).json({ message: "Server error" });
@@ -74,28 +61,24 @@ exports.createDonation = async (req, res) => {
     const { foodName, quantity, expiryTime, imageUrl } = req.body;
     const donorId = req.user.userId;
 
-    // Get restaurant ID
-    const [restaurants] = await db.query(
-      "SELECT id FROM restaurants WHERE user_id = ?",
-      [donorId],
-    );
-    if (restaurants.length === 0) {
-      return res
-        .status(400)
-        .json({ message: "Please register your restaurant first" });
+    const restSnap = await db.collection("restaurants").where("user_id", "==", donorId).get();
+    if (restSnap.empty) {
+      return res.status(400).json({ message: "Please register your restaurant first" });
     }
+    const restaurantId = restSnap.docs[0].id;
 
-    const restaurantId = restaurants[0].id;
-
-    const [result] = await db.query(
-      "INSERT INTO donations (donor_id, restaurant_id, food_name, quantity, expiry_time, image_url) VALUES (?, ?, ?, ?, ?, ?)",
-      [donorId, restaurantId, foodName, quantity, expiryTime, imageUrl || null],
-    );
-
-    res.status(201).json({
-      message: "Donation created successfully",
-      donationId: result.insertId,
+    const result = await db.collection("donations").add({
+      donor_id: donorId,
+      restaurant_id: restaurantId,
+      food_name: foodName,
+      quantity,
+      expiry_time: expiryTime,
+      image_url: imageUrl || null,
+      status: "available",
+      created_at: new Date().toISOString(),
     });
+
+    res.status(201).json({ message: "Donation created successfully", donationId: result.id });
   } catch (error) {
     console.error("Create donation error:", error);
     res.status(500).json({ message: "Server error" });
@@ -105,14 +88,22 @@ exports.createDonation = async (req, res) => {
 // Get all donations (for receivers)
 exports.getAllDonations = async (req, res) => {
   try {
-    const [donations] = await db.query(`
-      SELECT d.*, r.name as donor_name, r.address as location, r.phone as donor_phone
-      FROM donations d
-      JOIN restaurants r ON d.restaurant_id = r.id
-      WHERE d.status = 'available'
-      ORDER BY d.created_at DESC
-    `);
+    const snap = await db.collection("donations").where("status", "==", "available").get();
 
+    const donations = await Promise.all(
+      snap.docs.map(async (doc) => {
+        const d = doc.data();
+        const restDoc = await db.collection("restaurants").doc(d.restaurant_id).get();
+        const rest = restDoc.exists ? restDoc.data() : {};
+        return {
+          id: doc.id, ...d,
+          donor_name: rest.name || "",
+          location: rest.address || "",
+          donor_phone: rest.phone || "",
+        };
+      })
+    );
+    donations.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
     res.json(donations);
   } catch (error) {
     console.error("Get donations error:", error);
@@ -124,15 +115,9 @@ exports.getAllDonations = async (req, res) => {
 exports.getDonorDonations = async (req, res) => {
   try {
     const donorId = req.user.userId;
-    const [donations] = await db.query(
-      `
-      SELECT * FROM donations 
-      WHERE donor_id = ? 
-      ORDER BY created_at DESC
-    `,
-      [donorId],
-    );
-
+    const snap = await db.collection("donations").where("donor_id", "==", donorId).get();
+    const donations = snap.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+    donations.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
     res.json(donations);
   } catch (error) {
     console.error("Get donor donations error:", error);
@@ -145,22 +130,40 @@ exports.getDonationRequests = async (req, res) => {
   try {
     const donorId = req.user.userId;
 
-    const [requests] = await db.query(
-      `
-      SELECT req.*, 
-             d.food_name, d.quantity, d.expiry_time, d.status as donation_status,
-             u.name as receiver_name, u.email as receiver_email,
-             r.name as restaurant_name
-      FROM requests req
-      JOIN donations d ON req.donation_id = d.id
-      JOIN users u ON req.receiver_id = u.id
-      JOIN restaurants r ON d.restaurant_id = r.id
-      WHERE d.donor_id = ?
-      ORDER BY req.created_at DESC
-    `,
-      [donorId],
-    );
+    const donSnap = await db.collection("donations").where("donor_id", "==", donorId).get();
+    const donationIds = donSnap.docs.map((d) => d.id);
 
+    if (donationIds.length === 0) return res.json([]);
+
+    const reqSnap = await db.collection("requests").get();
+    const allRequests = reqSnap.docs
+      .map((doc) => ({ id: doc.id, ...doc.data() }))
+      .filter((r) => donationIds.includes(r.donation_id));
+
+    const requests = await Promise.all(
+      allRequests.map(async (r) => {
+        const donDoc = await db.collection("donations").doc(r.donation_id).get();
+        const don = donDoc.exists ? donDoc.data() : {};
+
+        const userDoc = await db.collection("users").doc(r.receiver_id).get();
+        const user = userDoc.exists ? userDoc.data() : {};
+
+        const restSnap = await db.collection("restaurants").where("user_id", "==", don.donor_id).get();
+        const rest = !restSnap.empty ? restSnap.docs[0].data() : {};
+
+        return {
+          ...r,
+          food_name: don.food_name,
+          quantity: don.quantity,
+          expiry_time: don.expiry_time,
+          donation_status: don.status,
+          receiver_name: user.name || "",
+          receiver_email: user.email || "",
+          restaurant_name: rest.name || "",
+        };
+      })
+    );
+    requests.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
     res.json(requests);
   } catch (error) {
     console.error("Get donation requests error:", error);
@@ -175,11 +178,14 @@ exports.updateDonation = async (req, res) => {
     const { foodName, quantity, expiryTime, status } = req.body;
     const donorId = req.user.userId;
 
-    await db.query(
-      "UPDATE donations SET food_name = ?, quantity = ?, expiry_time = ?, status = ? WHERE id = ? AND donor_id = ?",
-      [foodName, quantity, expiryTime, status, id, donorId],
-    );
+    const doc = await db.collection("donations").doc(id).get();
+    if (!doc.exists || doc.data().donor_id !== donorId) {
+      return res.status(403).json({ message: "Not authorized" });
+    }
 
+    await db.collection("donations").doc(id).update({
+      food_name: foodName, quantity, expiry_time: expiryTime, status,
+    });
     res.json({ message: "Donation updated successfully" });
   } catch (error) {
     console.error("Update donation error:", error);
@@ -193,11 +199,12 @@ exports.deleteDonation = async (req, res) => {
     const { id } = req.params;
     const donorId = req.user.userId;
 
-    await db.query("DELETE FROM donations WHERE id = ? AND donor_id = ?", [
-      id,
-      donorId,
-    ]);
+    const doc = await db.collection("donations").doc(id).get();
+    if (!doc.exists || doc.data().donor_id !== donorId) {
+      return res.status(403).json({ message: "Not authorized" });
+    }
 
+    await db.collection("donations").doc(id).delete();
     res.json({ message: "Donation deleted successfully" });
   } catch (error) {
     console.error("Delete donation error:", error);
