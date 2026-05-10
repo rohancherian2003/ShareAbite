@@ -1,0 +1,10 @@
+{
+  "buildCommand": "cd \"mca project/frontend\" && npm install && npm run build",
+  "outputDirectory": "mca project/frontend/dist",
+  "rewrites": [
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
+    }
+  ]
+}
