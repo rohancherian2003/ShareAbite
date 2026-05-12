@@ -7,6 +7,10 @@
       "destination": "https://shareabite-backend-0cxs.onrender.com/api/$1"
     },
     {
+      "source": "/uploads/(.*)",
+      "destination": "https://shareabite-backend-0cxs.onrender.com/uploads/$1"
+    },
+    {
       "source": "/(.*)",
       "destination": "/index.html"
     }
