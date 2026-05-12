@@ -3,6 +3,10 @@
   "outputDirectory": "mca project/frontend/dist",
   "rewrites": [
     {
+      "source": "/api/(.*)",
+      "destination": "https://shareabite-backend.onrender.com/api/$1"
+    },
+    {
       "source": "/(.*)",
       "destination": "/index.html"
     }

@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: shareabite-backend
+    env: node
+    buildCommand: npm install
+    startCommand: npm start
+    rootDir: "mca project/backend"
+    plan: free
+    envVars:
+      - key: PORT
+        value: 10000
+      - key: NODE_ENV
+        value: production
+      - key: JWT_SECRET
+        generateValue: true
+      - key: FIREBASE_SERVICE_ACCOUNT
+        sync: false
