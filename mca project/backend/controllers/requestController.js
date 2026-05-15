@@ -43,6 +43,20 @@ exports.createRequest = async (req, res) => {
       );
     }
 
+    // Send email to donor
+    const don = donDoc.data();
+    if (don.donor_id) {
+      const donorDoc = await db.collection("users").doc(don.donor_id).get();
+      if (donorDoc.exists) {
+        const donor = donorDoc.data();
+        await sendEmail(
+          donor.email,
+          "New Food Request - ShareAbite",
+          `Hello ${donor.name},\n\nYou have received a new food request for your donation. Please log in to your account to review and approve it.\n\nThank you,\nShareAbite Team`
+        );
+      }
+    }
+
     res.status(201).json({ message: "Request created successfully", requestId: result.id });
   } catch (error) {
     console.error("Create request error:", error);
@@ -116,10 +130,28 @@ exports.updateRequestStatus = async (req, res) => {
         .where("status", "==", "pending")
         .get();
       const batch = db.batch();
+      
+      const rejectedReceivers = [];
       pendingSnap.docs.forEach((doc) => {
-        if (doc.id !== id) batch.update(doc.ref, { status: "rejected" });
+        if (doc.id !== id) {
+          batch.update(doc.ref, { status: "rejected" });
+          rejectedReceivers.push(doc.data().receiver_id);
+        }
       });
       await batch.commit();
+
+      // Send rejection emails to automatically rejected receivers
+      for (const recId of rejectedReceivers) {
+        const recDoc = await db.collection("users").doc(recId).get();
+        if (recDoc.exists) {
+          const recUser = recDoc.data();
+          await sendEmail(
+            recUser.email,
+            "Food Request Rejected - ShareAbite",
+            `Hello ${recUser.name},\n\nUnfortunately, your food pickup request has been rejected because another request for this donation was approved.\n\nThank you,\nShareAbite Team`
+          );
+        }
+      }
     }
 
     // Update this request status
