@@ -47,7 +47,7 @@ exports.sendEmail = async (to, subject, text, html) => {
       await createTransporter();
     }
     const info = await transporter.sendMail({
-      from: '"ShareAbite Admin" <noreply@shareabite.com>',
+      from: `"ShareAbite Admin" <${process.env.SMTP_USER || "noreply@shareabite.com"}>`,
       to,
       subject,
       text,
