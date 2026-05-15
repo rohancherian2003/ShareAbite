@@ -26,7 +26,7 @@ exports.approveUser = async (req, res) => {
     const doc = await db.collection("users").doc(id).get();
     if (doc.exists) {
       const user = doc.data();
-      sendEmail(
+      await sendEmail(
         user.email,
         "Account Approved - ShareAbite",
         `Hello ${user.name},\n\nYour account has been approved by the admin. You can now log in and use the platform.\n\nThank you,\nShareAbite Team`
@@ -95,7 +95,7 @@ exports.deleteUser = async (req, res) => {
 
     await db.collection("users").doc(id).delete();
 
-    sendEmail(
+    await sendEmail(
       user.email,
       "Account Rejected - ShareAbite",
       `Hello ${user.name},\n\nWe regret to inform you that your account registration on ShareAbite has been reviewed and rejected by the admin.\n\nIf you believe this is a mistake, please contact our support team.\n\nThank you,\nShareAbite Team`
