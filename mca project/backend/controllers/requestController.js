@@ -36,11 +36,11 @@ exports.createRequest = async (req, res) => {
     const userDoc = await db.collection("users").doc(receiverId).get();
     if (userDoc.exists) {
       const user = userDoc.data();
-      await sendEmail(
+      sendEmail(
         user.email,
         "Food Request Submitted - ShareAbite",
         `Hello ${user.name},\n\nYour request for the donation has been successfully submitted. You will be notified once the donor approves it.\n\nThank you,\nShareAbite Team`
-      );
+      ).catch(err => console.error("Email failed:", err));
     }
 
     // Send email to donor
@@ -49,11 +49,11 @@ exports.createRequest = async (req, res) => {
       const donorDoc = await db.collection("users").doc(don.donor_id).get();
       if (donorDoc.exists) {
         const donor = donorDoc.data();
-        await sendEmail(
+        sendEmail(
           donor.email,
           "New Food Request - ShareAbite",
           `Hello ${donor.name},\n\nYou have received a new food request for your donation. Please log in to your account to review and approve it.\n\nThank you,\nShareAbite Team`
-        );
+        ).catch(err => console.error("Email failed:", err));
       }
     }
 
@@ -141,17 +141,17 @@ exports.updateRequestStatus = async (req, res) => {
       await batch.commit();
 
       // Send rejection emails to automatically rejected receivers concurrently
-      await Promise.all(rejectedReceivers.map(async (recId) => {
+      rejectedReceivers.map(async (recId) => {
         const recDoc = await db.collection("users").doc(recId).get();
         if (recDoc.exists) {
           const recUser = recDoc.data();
-          await sendEmail(
+          sendEmail(
             recUser.email,
             "Food Request Rejected - ShareAbite",
             `Hello ${recUser.name},\n\nUnfortunately, your food pickup request has been rejected because another request for this donation was approved.\n\nThank you,\nShareAbite Team`
-          );
+          ).catch(err => console.error("Email failed:", err));
         }
-      }));
+      });
     }
 
     // Update this request status
@@ -167,7 +167,7 @@ exports.updateRequestStatus = async (req, res) => {
       const text = status === "approved"
         ? `Hello ${user.name},\n\nGood news! Your food pickup request has been approved. Please contact the donor to coordinate pickup.\n\nThank you,\nShareAbite Team`
         : `Hello ${user.name},\n\nUnfortunately, your food pickup request has been rejected.\n\nThank you,\nShareAbite Team`;
-      await sendEmail(user.email, subject, text);
+      sendEmail(user.email, subject, text).catch(err => console.error("Email failed:", err));
     }
 
     res.json({ message: "Request status updated successfully" });
