@@ -68,6 +68,22 @@ app.get("/api/test/admin", async (req, res) => {
   }
 });
 
+// Test endpoint for email
+app.get("/api/test/email/:email", async (req, res) => {
+  try {
+    const { sendEmail } = require("./utils/emailer");
+    const info = await sendEmail(req.params.email, "Test Email from Render", "This is a test email to verify SMTP configuration.");
+    
+    if (!process.env.SMTP_HOST) {
+      res.json({ success: true, message: "Email sent using fallback Ethereal test account (Check Render Environment Variables!).", info });
+    } else {
+      res.json({ success: true, message: "Email successfully sent using Gmail SMTP!", info });
+    }
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message, stack: error.stack });
+  }
+});
+
 // Error handling middleware
 app.use((err, req, res, next) => {
   console.error(err.stack);
