@@ -1,4 +1,5 @@
 const nodemailer = require("nodemailer");
+const https = require("https");
 
 let transporter;
 
@@ -34,6 +35,56 @@ const createTransporter = async () => {
 
 createTransporter();
 
+// Helper to send email via Resend HTTPS API
+const sendViaResend = (apiKey, from, to, subject, text, html) => {
+  return new Promise((resolve, reject) => {
+    const payload = JSON.stringify({
+      from,
+      to: [to],
+      subject,
+      text,
+      html: html || text.replace(/\n/g, "<br>"),
+    });
+
+    const options = {
+      hostname: "api.resend.com",
+      path: "/emails",
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${apiKey}`,
+        "Content-Length": Buffer.byteLength(payload),
+      },
+    };
+
+    const req = https.request(options, (res) => {
+      let data = "";
+      res.on("data", (chunk) => {
+        data += chunk;
+      });
+      res.on("end", () => {
+        try {
+          const parsed = JSON.parse(data);
+          if (res.statusCode >= 200 && res.statusCode < 300) {
+            resolve(parsed);
+          } else {
+            reject(new Error(parsed.message || data));
+          }
+        } catch (e) {
+          reject(new Error(`Failed to parse response: ${data}`));
+        }
+      });
+    });
+
+    req.on("error", (err) => {
+      reject(err);
+    });
+
+    req.write(payload);
+    req.end();
+  });
+};
+
 /**
  * Send an email
  * @param {string} to - Recipient email
@@ -43,6 +94,23 @@ createTransporter();
  */
 exports.sendEmail = async (to, subject, text, html) => {
   try {
+    // Mode 1: HTTP API (Resend)
+    if (process.env.RESEND_API_KEY) {
+      console.log("Sending email via Resend HTTP API to:", to);
+      const fromAddress = process.env.EMAIL_FROM || "onboarding@resend.dev";
+      const result = await sendViaResend(
+        process.env.RESEND_API_KEY,
+        fromAddress,
+        to,
+        subject,
+        text,
+        html
+      );
+      console.log("Email sent successfully via Resend:", result.id);
+      return result;
+    }
+
+    // Mode 2: SMTP (Nodemailer fallback)
     if (!transporter) {
       await createTransporter();
     }
@@ -53,13 +121,14 @@ exports.sendEmail = async (to, subject, text, html) => {
       text,
       html,
     });
-    console.log("Message sent: %s", info.messageId);
+    console.log("Message sent via SMTP: %s", info.messageId);
     if (!process.env.SMTP_HOST) {
       console.log("Preview URL: %s", nodemailer.getTestMessageUrl(info));
     }
     return info;
   } catch (error) {
     console.error("Error sending email:", error);
- 
+    throw error;
   }
 };
+
