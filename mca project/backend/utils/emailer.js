@@ -4,36 +4,38 @@ const https = require("https");
 let transporter;
 
 const createTransporter = async () => {
-  if (process.env.SMTP_HOST && process.env.SMTP_USER) {
-    transporter = nodemailer.createTransport({
-      host: process.env.SMTP_HOST,
-      port: parseInt(process.env.SMTP_PORT) || 587,
-      secure: false,
-      auth: {
-        user: process.env.SMTP_USER,
-        pass: process.env.SMTP_PASS,
-      },
-      tls: {
-        rejectUnauthorized: false,
-      },
-    });
-  } else {
-    // Generate test SMTP service account from ethereal.email
-    const testAccount = await nodemailer.createTestAccount();
-    transporter = nodemailer.createTransport({
-      host: "smtp.ethereal.email",
-      port: 587,
-      secure: false, // true for 465, false for other ports
-      auth: {
-        user: testAccount.user, // generated ethereal user
-        pass: testAccount.pass, // generated ethereal password
-      },
-    });
-    console.log("Using Ethereal Email. Test Account generated.");
+  try {
+    if (process.env.SMTP_HOST && process.env.SMTP_USER) {
+      transporter = nodemailer.createTransport({
+        host: process.env.SMTP_HOST,
+        port: parseInt(process.env.SMTP_PORT) || 587,
+        secure: false,
+        auth: {
+          user: process.env.SMTP_USER,
+          pass: process.env.SMTP_PASS,
+        },
+        tls: {
+          rejectUnauthorized: false,
+        },
+      });
+    } else {
+      // Generate test SMTP service account from ethereal.email
+      const testAccount = await nodemailer.createTestAccount();
+      transporter = nodemailer.createTransport({
+        host: "smtp.ethereal.email",
+        port: 587,
+        secure: false, // true for 465, false for other ports
+        auth: {
+          user: testAccount.user, // generated ethereal user
+          pass: testAccount.pass, // generated ethereal password
+        },
+      });
+      console.log("Using Ethereal Email. Test Account generated.");
+    }
+  } catch (error) {
+    console.error("Failed to create email transporter:", error);
   }
 };
-
-createTransporter();
 
 // Helper to send email via Resend HTTPS API
 const sendViaResend = (apiKey, from, to, subject, text, html) => {
@@ -42,8 +44,8 @@ const sendViaResend = (apiKey, from, to, subject, text, html) => {
       from,
       to: [to],
       subject,
-      text,
-      html: html || text.replace(/\n/g, "<br>"),
+      text: text || "",
+      html: html || (text ? text.replace(/\n/g, "<br>") : ""),
     });
 
     const options = {
@@ -113,6 +115,9 @@ exports.sendEmail = async (to, subject, text, html) => {
     // Mode 2: SMTP (Nodemailer fallback)
     if (!transporter) {
       await createTransporter();
+    }
+    if (!transporter) {
+      throw new Error("Email transporter is not initialized.");
     }
     const info = await transporter.sendMail({
       from: `"ShareAbite Admin" <${process.env.SMTP_USER || "noreply@shareabite.com"}>`,
